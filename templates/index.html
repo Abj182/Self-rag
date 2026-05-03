@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Self-RAG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e0e10;
+      --surface: #18181c;
+      --border: #2a2a30;
+      --accent: #7cffd4;
+      --accent2: #ff7c5c;
+      --text: #e8e8e0;
+      --muted: #6b6b78;
+      --font-display: 'Syne', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-family: var(--font-display);
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.02em;
+    }
+
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.78rem;
+      letter-spacing: 0.05em;
+      transition: color 0.2s;
+    }
+
+    nav a:hover { color: var(--accent); }
+
+    .main {
+      flex: 1;
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 60px 24px 40px;
+      width: 100%;
+    }
+
+    .hero {
+      margin-bottom: 48px;
+      animation: fadeUp 0.5s ease both;
+    }
+
+    .hero h1 {
+      font-family: var(--font-display);
+      font-size: 2.4rem;
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: 10px;
+    }
+
+    .hero h1 span { color: var(--accent); }
+
+    .hero p {
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.7;
+    }
+
+    /* Index document section */
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      animation: fadeUp 0.5s ease both;
+      animation-delay: 0.1s;
+    }
+
+    .section-label {
+      font-size: 0.7rem;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .tab-row{
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .tab{
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.75rem;
+      padding: 6px 14px;
+    }
+
+    .tab.active{
+      background: var(--accent);
+      color: #0e0e10;
+      border-color: var(--accent);
+    }
+
+    .drop-zone{
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      padding: 36px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .drop-zone:hover, .drop-zone.dragover{
+      border-color: var(--accent);
+      background: rgba(124,255,212,0.04);
+    }
+
+    .drop-icon{
+      font-size: 1.6rem;
+      margin-bottom: 10px;
+      color: var(--accent);
+    }
+
+    .drop-text{
+      font-size: 0.82rem;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .drop-hint{
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .url-hint{
+      font-size: 0.72rem;
+      color: var(--muted);
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 4px;
+      line-height: 1.6;
+    }
+
+    input[type="text"], textarea {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      padding: 10px 14px;
+      width: 100%;
+      transition: border-color 0.2s;
+      outline: none;
+      resize: vertical;
+    }
+    #active-doc-bar{
+      font-size: 0.74rem;
+      color: var(--muted);
+      padding: 10px 14px;
+      background: rgba(124,255,212,0.06);
+      border: 1px solid rgba(124,255,212,0.15);
+      border-radius: 8px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .active-dot{
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: inline-block;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse{
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    #answer-box   { display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; margin-top: 24px; animation: fadeUp 0.35s ease both; }
+    #answer-box.visible { display: block; }
+
+    #not-found-box { display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; margin-top: 24px; animation: fadeUp 0.35s ease both; }
+    #not-found-box.visible { display: block; }
+
+    .nf-header{
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nf-icon{
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: rgba(255,124,92,0.12);
+      color: var(--accent2);
+      font-size: 1rem;
+      font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .nf-title{
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .nf-sub{
+      font-size: 0.76rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .nf-section-label{
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    #nf-partial-wrap, #nf-docs-wrap {
+      margin-bottom: 20px;
+    }
+
+    .partial-chip{
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.76rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 8px;
+      border-left: 2px solid var(--border);
+    }
+
+    .doc-chip{
+      display: inline-block;
+      background: rgba(124,255,212,0.08);
+      border: 1px solid rgba(124,255,212,0.2);
+      color: var(--accent);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 0.74rem;
+      margin: 4px 4px 0 0;
+    }
+
+    .nf-cta{
+      font-size: 0.74rem;
+      color: var(--muted);
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+
+    input[type="text"]:focus, textarea:focus {
+      border-color: var(--accent);
+    }
+
+    textarea { min-height: 100px; }
+
+    button {
+      background: var(--accent);
+      color: #0e0e10;
+      border: none;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 10px 20px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    button:hover { opacity: 0.85; }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    /* Query section */
+    .query-wrap {
+      display: flex;
+      gap: 10px;
+      animation: fadeUp 0.5s ease both;
+      animation-delay: 0.2s;
+    }
+
+    .query-wrap input { font-size: 0.9rem; padding: 14px 18px; }
+    .query-wrap button { padding: 14px 24px; }
+
+    /* Answer box */
+    #answer-box {
+      display: none;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      margin-top: 24px;
+      animation: fadeUp 0.35s ease both;
+    }
+
+    #answer-box.visible { display: block; }
+
+    .answer-label {
+      font-size: 0.68rem;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    #answer-text {
+      font-size: 0.88rem;
+      line-height: 1.8;
+      color: var(--text);
+      margin-bottom: 24px;
+    }
+
+    /* Score bars */
+    .scores {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .score-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .score-name {
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .score-val {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .score-val span { font-size: 0.75rem; color: var(--muted); }
+
+    .score-bar-track {
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+
+    .score-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width 0.6s ease;
+    }
+
+    .score-bar-fill.low { background: var(--accent2); }
+
+    .meta {
+      display: flex;
+      gap: 20px;
+      font-size: 0.72rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+    }
+
+    .meta strong { color: var(--text); }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    #index-status {
+      font-size: 0.75rem;
+      margin-top: 10px;
+      color: var(--muted);
+      min-height: 18px;
+    }
+
+    #index-status.ok { color: var(--accent); }
+    #index-status.err { color: var(--accent2); }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">self-rag</div>
+  <a href="/dashboard">dashboard →</a>
+</nav>
+
+<main class="main">
+  <div class="hero">
+    <h1>Ask your <span>documents.</span></h1>
+    <p>Index any text, then query it. The system retrieves, generates, and self-evaluates every answer.</p>
+  </div>
+
+  <!-- Index a document -->
+  <!-- Index a document -->
+<div class="section">
+  <div class="section-label">01 — Index a document</div>
+
+  <!-- Toggle between text and PDF -->
+  <div class="tab-row">
+  <button class="tab active" onclick="switchTab('text', this)">Paste text</button>
+  <button class="tab" onclick="switchTab('pdf', this)">Upload PDF</button>
+  <button class="tab" onclick="switchTab('url', this)">Scrape URL</button>
+</div>
+
+  <!-- Text input panel -->
+  <div id="panel-text">
+    <div class="row">
+      <input type="text" id="doc-id" placeholder="document id  (e.g. flask-docs)"/>
+    </div>
+    <textarea id="doc-text" placeholder="Paste your document text here..."></textarea>
+    <div style="display:flex; gap:10px; margin-top:10px;">
+      <button onclick="indexDoc()">Index document</button>
+    </div>
+  </div>
+
+  <!-- PDF upload panel -->
+  <div id="panel-pdf" style="display:none;">
+    <div class="row">
+      <input type="text" id="pdf-doc-id" placeholder="document id  (optional, uses filename by default)"/>
+    </div>
+    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('pdf-input').click()">
+      <div class="drop-icon">⬆</div>
+      <div class="drop-text">Click to choose a PDF or drag and drop</div>
+      <div class="drop-hint" id="drop-hint">max 16MB</div>
+      <input type="file" id="pdf-input" accept=".pdf" style="display:none" onchange="handleFileSelect(this)"/>
+    </div>
+    <div style="margin-top:10px;">
+      <button onclick="uploadPdf()" id="upload-btn" disabled>Upload & Index</button>
+    </div>
+  </div>
+
+  <!-- URL scrape panel -->
+<div id="panel-url" style="display:none;">
+  <div class="row">
+    <input type="text" id="url-input" placeholder="https://example.com/article"/>
+  </div>
+  <div class="row">
+    <input type="text" id="url-doc-id" placeholder="document id  (optional, uses domain by default)"/>
+  </div>
+  <div class="url-hint">
+    Works best with articles, docs, blog posts, and wiki pages.
+  </div>
+  <div style="margin-top:12px;">
+    <button onclick="scrapeUrl()" id="scrape-btn">Scrape & Index</button>
+  </div>
+</div>
+
+  <div id="index-status"></div>
+</div>
+<div id="active-doc-bar" style="display:none;">
+  <span class="active-dot"></span>
+  Querying: <strong id="active-doc-name"></strong>
+</div>
+  <!-- Query -->
+  <div class="section-label" style="margin-bottom:12px; animation: fadeUp 0.5s ease both; animation-delay:0.15s;">02 — Query</div>
+  <div class="query-wrap">
+    <input type="text" id="query-input" placeholder="Ask a question about your documents..." onkeydown="if(event.key==='Enter') submitQuery()"/>
+    <button id="query-btn" onclick="submitQuery()">Ask</button>
+  </div>
+
+  <!-- Answer -->
+  <!-- Success answer box -->
+<div id="answer-box">
+  <div class="answer-label">Answer</div>
+  <div id="answer-text"></div>
+  <div class="scores">
+    <div class="score-card">
+      <div class="score-name">Retrieval</div>
+      <div class="score-val" id="s-retrieval">—<span>/5</span></div>
+      <div class="score-bar-track"><div class="score-bar-fill" id="b-retrieval" style="width:0%"></div></div>
+    </div>
+    <div class="score-card">
+      <div class="score-name">Grounding</div>
+      <div class="score-val" id="s-grounding">—<span>/5</span></div>
+      <div class="score-bar-track"><div class="score-bar-fill" id="b-grounding" style="width:0%"></div></div>
+    </div>
+    <div class="score-card">
+      <div class="score-name">Quality</div>
+      <div class="score-val" id="s-quality">—<span>/5</span></div>
+      <div class="score-bar-track"><div class="score-bar-fill" id="b-quality" style="width:0%"></div></div>
+    </div>
+  </div>
+  <div class="meta">
+    <div>avg score <strong id="m-avg">—</strong></div>
+    <div>attempts <strong id="m-attempts">—</strong></div>
+  </div>
+</div>
+
+<!-- Not found box -->
+<div id="not-found-box">
+  <div class="nf-header">
+    <div class="nf-icon">?</div>
+    <div>
+      <div class="nf-title">Not found in your documents</div>
+      <div class="nf-sub" id="nf-suggestion"></div>
+    </div>
+  </div>
+
+  <!-- Partial matches -->
+  <div id="nf-partial-wrap">
+    <div class="nf-section-label">Closest content found</div>
+    <div id="nf-partials"></div>
+  </div>
+
+  <!-- Indexed docs -->
+  <div id="nf-docs-wrap">
+    <div class="nf-section-label">Currently indexed documents</div>
+    <div id="nf-docs"></div>
+  </div>
+
+  <div class="nf-cta">
+    Index a relevant source using the panel above, then ask again.
+  </div>
+</div>
+</main>
+
+<script>
+  let selectedFile = null;
+
+function switchTab(tab, btn) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("panel-text").style.display = tab === "text" ? "block" : "none";
+  document.getElementById("panel-pdf").style.display  = tab === "pdf"  ? "block" : "none";
+  document.getElementById("panel-url").style.display  = tab === "url"  ? "block" : "none";
+  document.getElementById("index-status").textContent = "";
+}
+
+async function indexDoc() {
+  const doc_id = document.getElementById("doc-id").value.trim();
+  const text   = document.getElementById("doc-text").value.trim();
+  const status = document.getElementById("index-status");
+  if (!doc_id || !text) {
+    status.textContent = "Both document ID and text are required.";
+    status.className = "err"; return;
+  }
+  status.innerHTML = '<span class="spinner"></span>Indexing...';
+  status.className = "";
+  const res  = await fetch("/index-doc", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({doc_id, text}) });
+  const data = await res.json();
+  status.textContent = data.status === "success" ? `✓ "${doc_id}" indexed successfully.` : data.error || "Something went wrong.";
+  status.className   = data.status === "success" ? "ok" : "err";
+  updateActiveDoc(doc_id);
+}
+
+function handleFileSelect(input) {
+  selectedFile = input.files[0];
+  if (selectedFile) {
+    document.getElementById("drop-hint").textContent = `✓ ${selectedFile.name}`;
+    document.getElementById("upload-btn").disabled = false;
+  }
+}
+
+const dropZone = document.getElementById("drop-zone");
+dropZone.addEventListener("dragover",  e => { e.preventDefault(); dropZone.classList.add("dragover"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+dropZone.addEventListener("drop", e => {
+  e.preventDefault(); dropZone.classList.remove("dragover");
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith(".pdf")) {
+    selectedFile = file;
+    document.getElementById("drop-hint").textContent = `✓ ${file.name}`;
+    document.getElementById("upload-btn").disabled = false;
+  } else {
+    document.getElementById("index-status").textContent = "Only PDF files are supported.";
+    document.getElementById("index-status").className = "err";
+  }
+});
+
+async function uploadPdf() {
+  if (!selectedFile) return;
+  const doc_id = document.getElementById("pdf-doc-id").value.trim();
+  const status = document.getElementById("index-status");
+  const btn    = document.getElementById("upload-btn");
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span>Extracting and indexing PDF...';
+  status.className = "";
+  const formData = new FormData();
+  formData.append("file", selectedFile);
+  if (doc_id) formData.append("doc_id", doc_id);
+  const res  = await fetch("/upload-pdf", { method:"POST", body:formData });
+  const data = await res.json();
+  status.textContent = data.status === "success" ? `✓ "${data.doc_id}" indexed successfully.` : data.error || "Something went wrong.";
+  status.className   = data.status === "success" ? "ok" : "err";
+  btn.disabled = false;
+  updateActiveDoc(doc_id);
+}
+
+async function scrapeUrl() {
+  const url    = document.getElementById("url-input").value.trim();
+  const doc_id = document.getElementById("url-doc-id").value.trim();
+  const status = document.getElementById("index-status");
+  const btn    = document.getElementById("scrape-btn");
+  if (!url) { status.textContent = "Please enter a URL."; status.className = "err"; return; }
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span>Scraping and indexing...';
+  status.className = "";
+  const res  = await fetch("/scrape-url", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url, doc_id}) });
+  const data = await res.json();
+  status.textContent = data.status === "success" ? `✓ "${data.doc_id}" indexed — ${data.word_count.toLocaleString()} words scraped.` : data.error || "Something went wrong.";
+  status.className   = data.status === "success" ? "ok" : "err";
+  btn.disabled = false;
+  updateActiveDoc(doc_id);
+}
+
+async function submitQuery() {
+  const query = document.getElementById("query-input").value.trim();
+  if (!query) return;
+
+  const btn = document.getElementById("query-btn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Thinking...';
+
+  // hide both result boxes
+  document.getElementById("answer-box").classList.remove("visible");
+  document.getElementById("not-found-box").classList.remove("visible");
+
+  const res  = await fetch("/query", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({query}) });
+  const data = await res.json();
+
+  if (data.not_found) {
+    showNotFound(data);
+  } else {
+    showAnswer(data);
+  }
+
+  btn.disabled = false;
+  btn.textContent = "Ask";
+}
+
+function showAnswer(data) {
+  document.getElementById("answer-text").textContent = data.answer;
+  const s = data.scores;
+  setScore("retrieval", s.retrieval_relevance);
+  setScore("grounding", s.answer_grounding);
+  setScore("quality",   s.answer_quality);
+  document.getElementById("m-avg").textContent      = s.average_score + "/5";
+  document.getElementById("m-attempts").textContent = data.attempts;
+  document.getElementById("answer-box").classList.add("visible");
+}
+
+function showNotFound(data) {
+  document.getElementById("nf-suggestion").textContent = data.suggestion;
+
+  // partial matches
+  const pWrap = document.getElementById("nf-partial-wrap");
+  const pBox  = document.getElementById("nf-partials");
+  if (data.partial_matches && data.partial_matches.length > 0) {
+    pBox.innerHTML = data.partial_matches
+      .map(p => `<div class="partial-chip">"...${p}..."</div>`)
+      .join("");
+    pWrap.style.display = "block";
+  } else {
+    pWrap.style.display = "none";
+  }
+
+  // indexed docs
+  const dWrap = document.getElementById("nf-docs-wrap");
+  const dBox  = document.getElementById("nf-docs");
+  if (data.indexed_docs && data.indexed_docs.length > 0) {
+    dBox.innerHTML = data.indexed_docs
+      .map(d => `<span class="doc-chip">${d}</span>`)
+      .join("");
+    dWrap.style.display = "block";
+  } else {
+    dWrap.style.display = "none";
+  }
+
+  document.getElementById("not-found-box").classList.add("visible");
+}
+
+function setScore(key, val) {
+  document.getElementById(`s-${key}`).innerHTML = `${val}<span>/5</span>`;
+  const bar = document.getElementById(`b-${key}`);
+  bar.style.width = (val / 5 * 100) + "%";
+  bar.className   = "score-bar-fill" + (val < 3 ? " low" : "");
+}
+
+function updateActiveDoc(doc_id) {
+  const bar = document.getElementById("active-doc-bar");
+  document.getElementById("active-doc-name").textContent = doc_id;
+  bar.style.display = "flex";
+}
+// at the bottom of your script, outside all functions
+fetch("/active-doc")
+  .then(r => r.json())
+  .then(data => { if (data.active_doc_id) updateActiveDoc(data.active_doc_id); });
+</script>
+</body>
+</html>
+

@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Self-RAG — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0e0e10; --surface: #18181c; --border: #2a2a30;
+      --accent: #7cffd4; --accent2: #ff7c5c; --accent3: #7c9fff;
+      --text: #e8e8e0; --muted: #6b6b78;
+      --font-display: 'Syne', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+    body { background: var(--bg); color: var(--text); font-family: var(--font-mono); min-height: 100vh; }
+
+    nav {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 20px 40px; border-bottom: 1px solid var(--border);
+    }
+    .logo { font-family: var(--font-display); font-size: 1.2rem; font-weight: 700; color: var(--accent); }
+    nav a { color: var(--muted); text-decoration: none; font-size: 0.78rem; letter-spacing: 0.05em; transition: color 0.2s; }
+    nav a:hover { color: var(--accent); }
+
+    .main { max-width: 1100px; margin: 0 auto; padding: 48px 24px; }
+
+    .page-title { font-family: var(--font-display); font-size: 1.8rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+    .page-title span { color: var(--accent); }
+    .subtitle { color: var(--muted); font-size: 0.78rem; margin-bottom: 32px; }
+
+    /* Tab navigation */
+    .tab-nav { display: flex; gap: 4px; margin-bottom: 32px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+    .tab-nav button {
+      background: transparent; border: none; color: var(--muted);
+      font-family: var(--font-mono); font-size: 0.78rem; padding: 10px 18px;
+      cursor: pointer; border-bottom: 2px solid transparent;
+      margin-bottom: -1px; transition: color 0.2s, border-color 0.2s;
+      letter-spacing: 0.04em;
+    }
+    .tab-nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-nav button:hover:not(.active) { color: var(--text); }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Summary stats ── */
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 32px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+    .stat-label { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+    .stat-val { font-size: 1.8rem; font-weight: 600; color: var(--accent); }
+
+    /* ── Query log table ── */
+    .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .table-header { padding: 16px 20px; border-bottom: 1px solid var(--border); font-size: 0.68rem; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    thead th { text-align: left; padding: 12px 16px; color: var(--muted); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; border-bottom: 1px solid var(--border); font-weight: 400; }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.15s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(124,255,212,0.03); }
+    td { padding: 14px 16px; vertical-align: top; line-height: 1.5; }
+    .td-query { color: var(--text); max-width: 200px; }
+    .td-answer { color: var(--muted); max-width: 260px; font-size: 0.74rem; }
+    .score-pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; }
+    .pill-good { background: rgba(124,255,212,0.12); color: var(--accent); }
+    .pill-bad  { background: rgba(255,124,92,0.12);  color: var(--accent2); }
+    .attempts-badge { display: inline-block; width: 22px; height: 22px; border-radius: 50%; background: var(--border); color: var(--muted); font-size: 0.68rem; text-align: center; line-height: 22px; }
+    .attempts-badge.retry { background: rgba(255,124,92,0.15); color: var(--accent2); }
+    .ts { color: var(--muted); font-size: 0.7rem; }
+    .empty { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 0.82rem; }
+
+    /* ── Page Index panel ── */
+    .pi-top { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+
+    .pi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; }
+    .pi-card-title { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; }
+
+    /* doc list */
+    .doc-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .doc-row:last-child { border-bottom: none; }
+    .doc-row-id { color: var(--accent); font-size: 0.8rem; }
+    .doc-row-words { color: var(--muted); font-size: 0.72rem; }
+
+    /* term search */
+    .term-search-wrap { display: flex; gap: 8px; margin-bottom: 16px; }
+    .term-search-wrap input {
+      flex: 1; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-family: var(--font-mono);
+      font-size: 0.82rem; padding: 8px 12px; outline: none; transition: border-color 0.2s;
+    }
+    .term-search-wrap input:focus { border-color: var(--accent); }
+    .term-search-wrap button {
+      background: var(--accent); color: #0e0e10; border: none; border-radius: 8px;
+      font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600;
+      padding: 8px 16px; cursor: pointer; transition: opacity 0.2s;
+    }
+    .term-search-wrap button:hover { opacity: 0.85; }
+
+    /* inverted index results */
+    .index-result { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 8px; }
+    .index-result-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+    .index-result-doc { color: var(--accent); font-size: 0.8rem; font-weight: 600; }
+    .index-result-score { color: var(--accent3); font-size: 0.8rem; }
+    .tf-idf-bars { display: flex; flex-direction: column; gap: 6px; }
+    .bar-row { display: flex; align-items: center; gap: 10px; font-size: 0.7rem; }
+    .bar-label { color: var(--muted); width: 60px; flex-shrink: 0; }
+    .bar-track { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .bar-fill-tf   { height: 100%; background: var(--accent);  border-radius: 3px; transition: width 0.5s ease; }
+    .bar-fill-idf  { height: 100%; background: var(--accent3); border-radius: 3px; transition: width 0.5s ease; }
+    .bar-fill-tfidf{ height: 100%; background: var(--accent2); border-radius: 3px; transition: width 0.5s ease; }
+    .bar-val { color: var(--text); width: 52px; text-align: right; flex-shrink: 0; font-size: 0.68rem; }
+
+    /* chart area */
+    .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; margin-bottom: 24px; }
+    .chart-wrap canvas { max-height: 280px; }
+
+    /* token cloud */
+    .token-cloud-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; }
+    .token-cloud { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .token-tag {
+      padding: 4px 10px; border-radius: 20px; font-size: 0.72rem;
+      border: 1px solid var(--border); cursor: pointer; transition: all 0.15s;
+    }
+    .token-tag:hover { border-color: var(--accent); color: var(--accent); }
+
+    .legend-row { display: flex; gap: 16px; margin-bottom: 12px; font-size: 0.7rem; color: var(--muted); }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+
+    #pi-status { font-size: 0.75rem; color: var(--muted); min-height: 18px; margin-top: 8px; }
+    #pi-status.ok  { color: var(--accent); }
+    #pi-status.err { color: var(--accent2); }
+
+    .no-data { color: var(--muted); font-size: 0.8rem; text-align: center; padding: 30px; }
+
+    @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+    .fade-in { animation: fadeUp 0.3s ease both; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">self-rag</div>
+  <a href="/">← back to query</a>
+</nav>
+
+<main class="main">
+  <div class="page-title">Eval <span>Dashboard</span></div>
+  <div class="subtitle">Query logs, self-evaluation scores, and page index visualizer.</div>
+
+  <!-- Tab nav -->
+  <div class="tab-nav">
+    <button class="active" onclick="showTab('eval', this)">Eval log</button>
+    <button onclick="showTab('pageindex', this)">Page index</button>
+    <button onclick="showTab('charts', this)">Score charts</button>
+  </div>
+
+  <!-- ════════════════════════════════════════════
+       TAB 1 — Eval log
+  ═════════════════════════════════════════════ -->
+  <div id="tab-eval" class="tab-panel active">
+
+    {% set total = logs|length %}
+    {% set score_sum = namespace(val=0) %}
+    {% for log in logs %}{% set score_sum.val = score_sum.val + log.average_score %}{% endfor %}
+    {% set avg_score = (score_sum.val / total) if total > 0 else 0 %}
+    {% set retries = 0 %}
+    {% set good = 0 %}
+    {% for log in logs %}
+    {% if log.attempts > 1 %}{% set retries = retries + 1 %}{% endif %}
+    {% if log.average_score >= 4 %}{% set good = good + 1 %}{% endif %}
+{% endfor %}
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-label">Total queries</div><div class="stat-val">{{ total }}</div></div>
+      <div class="stat-card"><div class="stat-label">Avg score</div><div class="stat-val">{{ "%.2f"|format(avg_score) }}</div></div>
+      <div class="stat-card"><div class="stat-label">High quality (≥4)</div><div class="stat-val">{{ good }}</div></div>
+      <div class="stat-card"><div class="stat-label">Retried</div><div class="stat-val">{{ retries }}</div></div>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-header">Query log</div>
+      {% if logs %}
+      <table>
+        <thead>
+          <tr>
+            <th>Query</th><th>Answer</th><th>Retrieval</th>
+            <th>Grounding</th><th>Quality</th><th>Avg</th><th>Tries</th><th>Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td class="td-query">{{ log.query }}</td>
+            <td class="td-answer">{{ log.answer[:110] }}{% if log.answer|length > 110 %}...{% endif %}</td>
+            <td><span class="score-pill {{ 'pill-good' if log.retrieval_relevance >= 3 else 'pill-bad' }}">{{ log.retrieval_relevance }}/5</span></td>
+            <td><span class="score-pill {{ 'pill-good' if log.answer_grounding >= 3 else 'pill-bad' }}">{{ log.answer_grounding }}/5</span></td>
+            <td><span class="score-pill {{ 'pill-good' if log.answer_quality >= 3 else 'pill-bad' }}">{{ log.answer_quality }}/5</span></td>
+            <td><span class="score-pill {{ 'pill-good' if log.average_score >= 3 else 'pill-bad' }}">{{ log.average_score }}</span></td>
+            <td><span class="attempts-badge {{ 'retry' if log.attempts > 1 }}">{{ log.attempts }}</span></td>
+            <td class="ts">{{ log.created_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">No queries yet — go ask something.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════
+       TAB 2 — Page Index Visualizer
+  ═════════════════════════════════════════════ -->
+  <div id="tab-pageindex" class="tab-panel">
+
+    <div class="pi-top">
+
+      <!-- Indexed documents list -->
+      <div class="pi-card">
+        <div class="pi-card-title">Indexed documents</div>
+        <div id="doc-list"><div class="no-data">Loading...</div></div>
+      </div>
+
+      <!-- Term lookup -->
+      <div class="pi-card">
+        <div class="pi-card-title">Inverted index lookup</div>
+        <div class="term-search-wrap">
+          <input type="text" id="term-input" placeholder="search a term e.g. flask"
+                 onkeydown="if(event.key==='Enter') lookupTerm()"/>
+          <button onclick="lookupTerm()">Lookup</button>
+        </div>
+        <div id="pi-status"></div>
+        <div id="index-results"></div>
+      </div>
+    </div>
+
+    <!-- TF-IDF bar chart for top terms in a doc -->
+    <div class="chart-wrap">
+      <div class="pi-card-title">Top TF-IDF terms
+        <span style="color:var(--muted); font-size:0.7rem; margin-left:8px;">select a document below to visualise</span>
+      </div>
+      <div class="legend-row">
+        <span><span class="legend-dot" style="background:var(--accent)"></span>TF</span>
+        <span><span class="legend-dot" style="background:var(--accent3)"></span>IDF</span>
+        <span><span class="legend-dot" style="background:var(--accent2)"></span>TF-IDF</span>
+      </div>
+      <canvas id="tfidf-chart"></canvas>
+    </div>
+
+    <!-- Doc selector for chart -->
+    <div class="token-cloud-wrap">
+      <div class="pi-card-title">Select document to visualise</div>
+      <div class="token-cloud" id="doc-selector"></div>
+    </div>
+
+    <!-- Top tokens cloud -->
+    <div class="token-cloud-wrap" style="margin-top:16px;">
+      <div class="pi-card-title">Top tokens in selected document
+        <span style="color:var(--muted); font-size:0.7rem; margin-left:8px;">(size = TF-IDF weight — click to lookup)</span>
+      </div>
+      <div class="token-cloud" id="token-cloud"></div>
+    </div>
+
+  </div>
+
+  <!-- ════════════════════════════════════════════
+       TAB 3 — Score Charts
+  ═════════════════════════════════════════════ -->
+  <div id="tab-charts" class="tab-panel">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+      <div class="chart-wrap">
+        <div class="pi-card-title">Average score over time</div>
+        <canvas id="score-trend-chart"></canvas>
+      </div>
+      <div class="chart-wrap">
+        <div class="pi-card-title">Score breakdown (all queries)</div>
+        <canvas id="score-breakdown-chart"></canvas>
+      </div>
+    </div>
+    <div class="chart-wrap" style="margin-top:16px;">
+      <div class="pi-card-title">Retrieval vs grounding vs quality per query</div>
+      <canvas id="score-detail-chart"></canvas>
+    </div>
+  </div>
+
+</main>
+
+<script>
+let tfidfChart = null;
+let scoreCharts = [];
+let LOGS_DATA = [];  // will be loaded via fetch
+
+// load logs from API on page load
+async function initDashboard() {
+  try {
+    const res  = await fetch("/api/logs");
+    const data = await res.json();
+    LOGS_DATA  = data.logs || [];
+    console.log("Logs loaded:", LOGS_DATA.length);
+  } catch (e) {
+    console.error("Failed to load logs:", e);
+    LOGS_DATA = [];
+  }
+}
+// run on page load
+initDashboard();
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function showTab(name, btn) {
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+  document.querySelectorAll(".tab-nav button").forEach(b => b.classList.remove("active"));
+  document.getElementById("tab-" + name).classList.add("active");
+  btn.classList.add("active");
+  if (name === "pageindex") loadPageIndex();
+  if (name === "charts")    renderScoreCharts();
+}
+
+// ── Page Index ────────────────────────────────────────────────────────────────
+
+async function loadPageIndex() {
+  const res  = await fetch("/page-index-stats");
+  const data = await res.json();
+
+  // doc list
+  const docList = document.getElementById("doc-list");
+  if (!data.docs || data.docs.length === 0) {
+    docList.innerHTML = '<div class="no-data">No documents indexed yet.</div>';
+    return;
+  }
+
+  docList.innerHTML = data.docs.map(d => `
+    <div class="doc-row fade-in">
+      <span class="doc-row-id">${d.doc_id}</span>
+      <span class="doc-row-words">${d.word_count.toLocaleString()} tokens</span>
+    </div>`).join("");
+
+  // doc selector chips for chart
+  const selector = document.getElementById("doc-selector");
+  selector.innerHTML = data.docs.map((d, i) => `
+    <span class="token-tag" onclick="loadDocChart('${d.doc_id}', this)"
+          style="${i===0 ? 'border-color:var(--accent);color:var(--accent)' : ''}">
+      ${d.doc_id}
+    </span>`).join("");
+
+  // auto-load first doc
+  if (data.docs.length > 0) {
+    loadDocChart(data.docs[0].doc_id, selector.firstElementChild);
+  }
+}
+
+async function loadDocChart(doc_id, chip) {
+  // highlight selected chip
+  document.querySelectorAll("#doc-selector .token-tag").forEach(c => {
+    c.style.borderColor = ""; c.style.color = "";
+  });
+  chip.style.borderColor = "var(--accent)";
+  chip.style.color       = "var(--accent)";
+
+  console.log("Loading chart for:", doc_id);  // debug
+
+  try {
+    const res  = await fetch(`/page-index-terms?doc_id=${encodeURIComponent(doc_id)}&top_k=15`);
+    const data = await res.json();
+
+    console.log("Terms data:", data);  // debug
+
+    if (data.error) {
+      console.error("API error:", data.error);
+      return;
+    }
+
+    if (!data.terms || data.terms.length === 0) {
+      console.warn("No terms returned for doc:", doc_id);
+      return;
+    }
+
+    const labels  = data.terms.map(t => t.term);
+    const tfVals  = data.terms.map(t => parseFloat(t.tf.toFixed(4)));
+    const idfVals = data.terms.map(t => parseFloat(t.idf.toFixed(4)));
+    const tfidfV  = data.terms.map(t => parseFloat(t.tfidf.toFixed(4)));
+
+    console.log("Chart labels:", labels);  // debug
+
+    // destroy old chart if exists
+    if (tfidfChart) {
+      tfidfChart.destroy();
+      tfidfChart = null;
+    }
+
+    // make sure canvas exists
+    const canvas = document.getElementById("tfidf-chart");
+    if (!canvas) {
+      console.error("Canvas element not found!");
+      return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    tfidfChart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "TF",     data: tfVals,  backgroundColor: "rgba(124,255,212,0.6)", borderRadius: 4 },
+          { label: "IDF",    data: idfVals, backgroundColor: "rgba(124,159,255,0.6)", borderRadius: 4 },
+          { label: "TF-IDF", data: tfidfV,  backgroundColor: "rgba(255,124,92,0.7)",  borderRadius: 4 }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { labels: { color: "#6b6b78", font: { family: "JetBrains Mono", size: 11 } } }
+        },
+        scales: {
+          x: { ticks: { color: "#6b6b78", font: { family: "JetBrains Mono", size: 10 } }, grid: { color: "#2a2a30" } },
+          y: { ticks: { color: "#6b6b78", font: { family: "JetBrains Mono", size: 10 } }, grid: { color: "#2a2a30" } }
+        }
+      }
+    });
+
+    console.log("Chart rendered successfully");  // debug
+
+    // token cloud
+    const maxScore = Math.max(...tfidfV);
+    const cloud    = document.getElementById("token-cloud");
+    cloud.innerHTML = data.terms.map(t => {
+      const weight = t.tfidf / maxScore;
+      const size   = 0.68 + weight * 0.5;
+      const alpha  = 0.4  + weight * 0.6;
+      return `<span class="token-tag"
+        onclick="document.getElementById('term-input').value='${t.term}'; lookupTerm()"
+        style="font-size:${size.toFixed(2)}rem; color:rgba(124,255,212,${alpha.toFixed(2)}); border-color:rgba(124,255,212,${(alpha*0.4).toFixed(2)})"
+        title="TF-IDF: ${t.tfidf.toFixed(4)}">${t.term}</span>`;
+    }).join("");
+
+  } catch (e) {
+    console.error("loadDocChart error:", e);
+  }
+}
+
+async function lookupTerm() {
+  const term   = document.getElementById("term-input").value.trim().toLowerCase();
+  const status = document.getElementById("pi-status");
+  const box    = document.getElementById("index-results");
+
+  if (!term) return;
+
+  status.textContent = "Looking up...";
+  status.className   = "";
+
+  const res  = await fetch(`/page-index-lookup?term=${encodeURIComponent(term)}`);
+  const data = await res.json();
+
+  if (!data.results || data.results.length === 0) {
+    status.textContent = `"${term}" not found in index.`;
+    status.className   = "err";
+    box.innerHTML      = "";
+    return;
+  }
+
+  status.textContent = `Found "${term}" in ${data.results.length} document(s)`;
+  status.className   = "ok";
+
+  const maxTF    = Math.max(...data.results.map(r => r.tf));
+  const maxIDF   = Math.max(...data.results.map(r => r.idf));
+  const maxTFIDF = Math.max(...data.results.map(r => r.tfidf));
+
+  box.innerHTML = data.results.map(r => `
+    <div class="index-result fade-in">
+      <div class="index-result-header">
+        <span class="index-result-doc">${r.doc_id}</span>
+        <span class="index-result-score">TF-IDF: ${r.tfidf.toFixed(4)}</span>
+      </div>
+      <div class="tf-idf-bars">
+        <div class="bar-row">
+          <span class="bar-label">TF</span>
+          <div class="bar-track"><div class="bar-fill-tf" style="width:${(r.tf/maxTF*100).toFixed(1)}%"></div></div>
+          <span class="bar-val">${r.tf.toFixed(4)}</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">IDF</span>
+          <div class="bar-track"><div class="bar-fill-idf" style="width:${(r.idf/maxIDF*100).toFixed(1)}%"></div></div>
+          <span class="bar-val">${r.idf.toFixed(4)}</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">TF-IDF</span>
+          <div class="bar-track"><div class="bar-fill-tfidf" style="width:${(r.tfidf/maxTFIDF*100).toFixed(1)}%"></div></div>
+          <span class="bar-val">${r.tfidf.toFixed(4)}</span>
+        </div>
+        <div style="font-size:0.68rem; color:var(--muted); margin-top:4px;">
+          ${r.positions} occurrences
+        </div>
+      </div>
+    </div>`).join("");
+}
+
+// ── Score Charts ──────────────────────────────────────────────────────────────
+function renderScoreCharts() {
+  scoreCharts.forEach(c => c.destroy());
+  scoreCharts = [];
+
+  console.log("Rendering score charts, logs:", LOGS_DATA.length); // debug
+
+  if (!LOGS_DATA || !LOGS_DATA.length) {
+    document.getElementById("tab-charts").innerHTML = `
+      <div style="text-align:center; padding:80px 20px; color:var(--muted); font-size:0.82rem;">
+        No queries logged yet — ask some questions first then come back.
+      </div>`;
+    return;
+  }
+
+  // logs come in newest-first — reverse for chronological charts
+  const logs     = [...LOGS_DATA].reverse();
+  const labels   = logs.map((_, i) => `Q${i + 1}`);
+  const avgScores= logs.map(l => l.average_score);
+  const retrieval= logs.map(l => l.retrieval_relevance);
+  const grounding= logs.map(l => l.answer_grounding);
+  const quality  = logs.map(l => l.answer_quality);
+
+  const gridColor = "#2a2a30";
+  const tickStyle = { color: "#6b6b78", font: { family: "JetBrains Mono", size: 10 } };
+
+  // Chart 1 — avg score trend line
+  const ctx1 = document.getElementById("score-trend-chart");
+  if (ctx1) {
+    scoreCharts.push(new Chart(ctx1.getContext("2d"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label          : "Avg score",
+          data           : avgScores,
+          borderColor    : "#7cffd4",
+          backgroundColor: "rgba(124,255,212,0.08)",
+          pointBackgroundColor: "#7cffd4",
+          tension        : 0.3,
+          fill           : true
+        }]
+      },
+      options: {
+        scales: {
+          x: { ticks: tickStyle, grid: { color: gridColor } },
+          y: { min: 0, max: 5, ticks: tickStyle, grid: { color: gridColor } }
+        },
+        plugins: {
+          legend: { labels: { color: "#6b6b78", font: { family: "JetBrains Mono", size: 11 } } }
+        }
+      }
+    }));
+  }
+
+  // Chart 2 — score breakdown donut
+  const high   = logs.filter(l => l.average_score >= 4).length;
+  const medium = logs.filter(l => l.average_score >= 3 && l.average_score < 4).length;
+  const low    = logs.filter(l => l.average_score < 3).length;
+
+  const ctx2 = document.getElementById("score-breakdown-chart");
+  if (ctx2) {
+    scoreCharts.push(new Chart(ctx2.getContext("2d"), {
+      type: "doughnut",
+      data: {
+        labels  : ["High (≥4)", "Medium (3–4)", "Low (<3)"],
+        datasets: [{
+          data           : [high, medium, low],
+          backgroundColor: [
+            "rgba(124,255,212,0.7)",
+            "rgba(124,159,255,0.7)",
+            "rgba(255,124,92,0.7)"
+          ],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        plugins: {
+          legend: { labels: { color: "#6b6b78", font: { family: "JetBrains Mono", size: 11 } } }
+        }
+      }
+    }));
+  }
+
+  // Chart 3 — per query retrieval vs grounding vs quality
+  const ctx3 = document.getElementById("score-detail-chart");
+  if (ctx3) {
+    scoreCharts.push(new Chart(ctx3.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          { label: "Retrieval", data: retrieval, backgroundColor: "rgba(124,255,212,0.6)", borderRadius: 3 },
+          { label: "Grounding", data: grounding, backgroundColor: "rgba(124,159,255,0.6)", borderRadius: 3 },
+          { label: "Quality",   data: quality,   backgroundColor: "rgba(255,124,92,0.6)",  borderRadius: 3 }
+        ]
+      },
+      options: {
+        scales: {
+          x: { ticks: tickStyle, grid: { color: gridColor } },
+          y: { min: 0, max: 5, ticks: tickStyle, grid: { color: gridColor } }
+        },
+        plugins: {
+          legend: { labels: { color: "#6b6b78", font: { family: "JetBrains Mono", size: 11 } } }
+        }
+      }
+    }));
+  }
+
+  console.log("Score charts rendered:", scoreCharts.length);
+}
+
+  
+
+</script>
+</body>
+</html>
